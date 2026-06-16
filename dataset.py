@@ -310,3 +310,134 @@ class BirdDatasetUnlabeled(Dataset):
         date = self.get_date(path)
         return unlabeled, (site, time, date)
         
+
+class XCDataset(Dataset):
+    PATH = "../../Datasets/Xeno-Canto/"
+    
+    config = {"padding":"random", "sr":32000, 'seed':2, 'train_only':False}
+
+    def __init__(self, is_train=True, fold=0, config={}):     
+        self.config.update(config)
+
+        df = pd.read_csv(self.PATH+'files_details.csv', low_memory=False)
+        
+        df['license'] = df.lic.apply(lambda x: x.split('/')[-3])
+        df = df[df.sp!='mystery']
+        df = df[df.license!='by-nc-nd']
+        df = df[df.license!='3.0']
+        df['filename'] = self.PATH+'audio/'+df['sp'].astype(str)+'/XC'+df['id'].astype(str)+'.ogg'
+        df['status'] = df.filename.apply(lambda x: 'OK' if os.path.exists(x) else None)
+        df = df.dropna(subset=['status']).drop_duplicates(subset=['filename', 'sp', 'gen'])
+
+        df['primary_label'] = df.gen.apply(lambda x: x).values
+        df['secondary_labels'] = df['also'].apply(eval)
+        df['secondary_labels'] = df['secondary_labels'].apply(lambda x: [y.split(' ')[0] for y in x])
+
+        sp_counts = df.groupby('primary_label').count()
+        df.index = df.primary_label.values
+        df = df.loc[sp_counts[sp_counts>32].index]
+        
+        self.LABELS = list(np.unique(df.primary_label))
+            
+        df.index = df.filename.values
+        
+        IDX = np.unique(df.index)
+        np.random.seed(self.config['seed'])
+        np.random.shuffle(IDX)
+
+        if self.config['train_only']: idx = IDX
+        else:
+            skf = StratifiedKFold(n_splits=20)
+            FOLDS = list(skf.split(IDX, df.loc[IDX].primary_label.fillna('none').values))
+            train_idx = IDX[FOLDS[fold][0]].tolist()
+            val_idx = IDX[FOLDS[fold][1]].tolist()
+            idx = train_idx if is_train else val_idx
+            
+        DF = df.loc[idx].copy()
+
+        self.paths = list(DF['filename'].values)#.str.replace('.ogg','.mp3').values)
+        labels = DF['primary_label'].apply(self.make_labels).values
+        secondary_labels = DF['secondary_labels'].apply(self.make_secondary_labels).values
+        self.labels = (labels | secondary_labels)#.astype(int)
+        
+        self.is_train = is_train
+        self.DF = DF
+        
+
+    def make_labels(self, X):
+        out = np.zeros(len(self.LABELS)).astype(bool)
+        out[self.LABELS.index(X)] = True
+            
+        return out
+
+    def make_secondary_labels(self, X):
+        out = np.zeros(len(self.LABELS)).astype(bool)
+        for x in X:
+            if x in self.LABELS:
+                out[self.LABELS.index(x)] = True
+            
+        return out
+        
+
+    def load_sound(self, filepath, start=0, DUR=5*32000):
+        wav, sr = torchaudio.load(filepath)
+        wav = wav[0]
+
+        l = len(wav)
+        if l < DUR:
+            padding = self.config['padding']
+            if padding=='random': padding = np.random.choice(['cycle', 'zero'])
+                
+            if padding=='cycle':
+                n_repeat = int(np.ceil(DUR/l))
+                wav = torch.roll(wav.repeat(n_repeat), np.random.randint(l))[:DUR]
+            else:
+                wav2 = torch.zeros((DUR))
+                s = np.random.randint(DUR-l)
+                wav2[s:s+l] = wav
+                wav = wav2
+        else:
+            if self.is_train:
+                s = random.randint(0, l-DUR)
+                wav = wav[s:s+DUR]
+            else:
+                wav = wav[:DUR]
+                
+        return wav
+
+    def get_loader(self):
+        if self.is_train:
+            return DataLoader(
+                self,
+                batch_size=self.config['batch_size'],
+                num_workers=self.config['num_workers'],
+                pin_memory=True,
+                drop_last=True,
+                shuffle=True,
+            )
+        else:
+            return DataLoader(
+                self,
+                batch_size=self.config['batch_size'],
+                shuffle=False,
+                num_workers=self.config['num_workers'],
+                pin_memory=True,
+            )
+
+    def __len__(self):
+        return len(self.paths)
+        
+
+    def __getitem__(self, idx):
+        path = self.paths[idx]
+        DUR = int(self.config['duration'] * self.config['sr'])
+
+        audio = self.load_sound(path, DUR=DUR)
+        labels = self.labels[idx]
+        
+        return (
+            audio,
+            torch.tensor(labels, dtype=torch.float32)
+        )
+
+
