@@ -74,7 +74,7 @@ Key entry points include:
 
 ## Resources
 
-- [Detailed solution write-up](writeup.md)
+- [Detailed solution write-up](https://www.kaggle.com/competitions/birdclef-2026/writeups/12th-place-solution-mixmax-regularization)
 - [Xeno-Canto pre-training metadata](https://www.kaggle.com/datasets/antoinemasq/xeno-canto-pretraining-data/)
 - [Bioacoustic annotation tool](https://www.kaggle.com/code/antoinemasq/birdclef-2026-annotation-tool-dash-app)
 
