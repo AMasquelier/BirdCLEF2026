@@ -54,18 +54,6 @@ Sliding-window inference produced the largest post-processing gain, improving pr
 Xeno-Canto pre-training improved both leaderboard splits by roughly 0.01. CASL and MixMax were modest independently but performed best together, reaching 0.940 private AUC in the baseline ablation before final ensembling and post-processing.
 
 ## Project structure
-
-```text
-training/           Baseline, semi-supervised, and Xeno-Canto pre-training pipelines
-models/             Model definitions and supporting components
-pretrained_models/  Pre-trained model assets
-teachers/           Teacher models used for pseudo-labeling
-deliveries/         Compiled inference deliverables
-error_analyses/     Error-analysis utilities and artifacts
-labs/               Experiments and exploratory work
-writeup.md          Detailed competition solution write-up
-```
-
 Key entry points include:
 
 - `training/baseline.py` — supervised training with CASL and MixMax consistency;
